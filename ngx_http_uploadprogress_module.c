@@ -564,7 +564,11 @@ ngx_http_reportuploads_handler(ngx_http_request_t * r)
     ngx_http_uploadprogress_conf_t  *upcf;
     ngx_http_uploadprogress_ctx_t   *ctx;
     ngx_http_uploadprogress_node_t  *up;
+#if (nginx_version >= 1023000)
+    ngx_table_elt_t                 *expires, *ccp;
+#else
     ngx_table_elt_t                 *expires, *cc, **ccp;
+#endif
     ngx_http_uploadprogress_state_t  state;
     ngx_http_uploadprogress_template_t  *t;
 
@@ -645,7 +649,35 @@ ngx_http_reportuploads_handler(ngx_http_request_t * r)
 
     len = sizeof("Mon, 28 Sep 1970 06:00:00 GMT");
     expires->value.len = len - 1;
+    expires->value.data = (u_char *) "Thu, 01 Jan 1970 00:00:01 GMT";
+#if (nginx_version >= 1023000)
+    ccp = r->headers_out.cache_control;
+    if (ccp == NULL) {
+        ccp = ngx_list_push(&r->headers_out.headers);
+        if (ccp == NULL) {
+            return NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+        r->headers_out.cache_control = ccp;
+		ccp->next = NULL;
 
+		ccp->hash = 1;
+		ngx_str_set(&ccp->key, "Cache-Control");
+
+        ccp = ngx_list_push(&r->headers_out.headers);
+        if (ccp == NULL) {
+            return NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
+
+    } else {
+        for (ccp = ccp->next; ccp; ccp = ccp->next) {
+			ccp->hash = 0;
+		}
+
+		ccp = r->headers_out.cache_control;
+		ccp->next = NULL;
+    }
+    ngx_str_set(&ccp->value, "no-cache");
+#else
     ccp = r->headers_out.cache_control.elts;
     if (ccp == NULL) {
 
@@ -678,11 +710,9 @@ ngx_http_reportuploads_handler(ngx_http_request_t * r)
 
         cc = ccp[0];
     }
-
-    expires->value.data = (u_char *) "Thu, 01 Jan 1970 00:00:01 GMT";
-
     cc->value.len = sizeof("no-cache") - 1;
     cc->value.data = (u_char *) "no-cache";
+#endif
 
 
     if (r->method == NGX_HTTP_HEAD) {
